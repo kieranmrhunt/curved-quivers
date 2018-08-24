@@ -26,11 +26,9 @@ ax2.streamplot(X,Y,U,V, color='k')
 
 
 grains = 12
-tmp = tuple([x]*grains for x in np.linspace(-3, 3, grains))
-xs = []
-for x in tmp:
-    xs += x
-ys = tuple(np.linspace(-3, 3, grains))*grains
+tmp =  np.linspace(-3, 3, grains)
+xs = np.tile(tmp, grains)
+ys = np.repeat(tmp, grains)
 
 
 seed_points = np.array([list(xs), list(ys)])
