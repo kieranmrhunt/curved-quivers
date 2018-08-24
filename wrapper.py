@@ -11,9 +11,14 @@ Y, X = np.mgrid[-w:w:100j, -w:w:100j]
 U = np.sin(X)*np.sin(Y)
 V = np.cos(X)*np.sin(Y)
 
-W = np.sqrt(U**2 + Y**2)
+#U = -Y
+#V = X
 
-f, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15,5))
+
+
+W = np.sqrt(U**2 + V**2)
+
+f, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15,4))
 
 s=10
 ax1.quiver(X[::s,::s],Y[::s,::s],U[::s,::s],V[::s,::s])
@@ -32,15 +37,22 @@ seed_points = np.array([list(xs), list(ys)])
 
 scale=2.
 
-splot(ax3,X,Y,U,V, arrowstyle='fancy', integration_direction='forward', density=10,
+velovect(ax3,X,Y,U,V, arrowstyle='fancy', integration_direction='forward', density=10,
                    minlength=.9*scale/grains, maxlength = scale/grains, start_points = seed_points.T,
 				   color='k')
 
 				   
 for ax in ax1, ax2, ax3:
-	ax.pcolormesh(X,Y, W, cmap=plt.cm.viridis, alpha=0.5, zorder=-1)
+	cs = ax.contourf(X,Y, W, cmap=plt.cm.viridis, alpha=0.5, zorder=-1)
+	ax.set_xlim([-3,3])
+	ax.set_ylim([-3,3])
 
-    
+ax1.set_title("Quiver")
+ax2.set_title("Streamplot")
+ax3.set_title("Curved quivers")
+
+
+plt.colorbar(cs, ax=[ax1,ax2,ax3])    
 plt.show()
 
 
