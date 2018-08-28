@@ -8,12 +8,14 @@ Y, X = np.mgrid[-w:w:100j, -w:w:100j]
 #U = -1 - X**2 + Y
 #V = 1 + X - Y**2
 
-U = np.sin(X)*np.sin(Y)
-V = np.cos(X)*np.sin(Y)
+#U = np.sin(X)*np.sin(Y)
+#V = np.cos(X)*np.sin(Y)
 
 #U = -Y
 #V = X
 
+U = -Y*np.sin(Y)*np.cos(Y)
+V = X*np.sin(X)*np.cos(X)
 
 
 W = np.sqrt(U**2 + V**2)
@@ -36,7 +38,8 @@ seed_points = np.array([list(xs), list(ys)])
 scale=2.
 
 velovect(ax3,X,Y,U,V, arrowstyle='fancy', density=10,
-                   minlength=.9*scale/grains, maxlength = scale/grains, start_points = seed_points.T,
+                   minlength=.9*scale/grains, maxlength = scale/grains, 
+                   start_points = seed_points.T,
 				   color='k')
 
 				   

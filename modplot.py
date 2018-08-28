@@ -129,7 +129,7 @@ def velovect(axes, x, y, u, v, density=1, linewidth=None, color=None,
     magnitude = np.sqrt(u**2 + v**2)
     magnitude/=np.max(magnitude)
 	
-    integrate = get_integrator(u, v, dmap, minlength, maxlength)
+    integrate = get_integrator(u, v, dmap, minlength, maxlength, magnitude)
 
     trajectories = []
     if start_points is None:
@@ -175,17 +175,17 @@ def velovect(axes, x, y, u, v, density=1, linewidth=None, color=None,
         tgx = np.array(t[0])
         tgy = np.array(t[1])
 		
-        length = np.mean(interpgrid(magnitude, tgx, tgy))
-        tgx = renormalize(tgx, length)
-        tgy = renormalize(tgy, length)
+        #length = np.mean(interpgrid(magnitude, tgx, tgy))
+        #tgx = renormalize(tgx, length)
+        #tgy = renormalize(tgy, length)
 		
         # Rescale from grid-coordinates to data-coordinates.
         tx, ty = dmap.grid2data(*np.array(t))
         tx += grid.x_origin
         ty += grid.y_origin
 		
-        tx = renormalize(tx, length)
-        ty = renormalize(ty, length)		
+        #tx = renormalize(tx, length)
+        #ty = renormalize(ty, length)		
         
 		
 
@@ -421,7 +421,7 @@ class StreamMask(object):
 # Integrator definitions
 #========================
 
-def get_integrator(u, v, dmap, minlength, maxlength):
+def get_integrator(u, v, dmap, minlength, maxlength, magnitude):
 
     # rescale velocity onto grid-coordinates for integrations.
     u, v = dmap.data2grid(u, v)
@@ -456,18 +456,13 @@ def get_integrator(u, v, dmap, minlength, maxlength):
 
         
         dmap.start_trajectory(x0, y0)
-        
- 
-        dmap.reset_start_point(x0, y0)
-        s, xt, yt = _integrate_rk12(x0, y0, dmap, forward_time, maxlength)
-        if len(x_traj) > 0:
-            xt = xt[1:]
-            yt = yt[1:]
-        stotal += s
-        x_traj += xt
-        y_traj += yt
 
-        if stotal > minlength:
+        dmap.reset_start_point(x0, y0)
+        stotal, x_traj, y_traj = _integrate_rk12(x0, y0, dmap, forward_time, maxlength, magnitude)
+
+        
+        #if stotal > minlength:
+        if len(x_traj)>1:
             return x_traj, y_traj
         else:  # reject short trajectories
             dmap.undo_trajectory()
@@ -476,7 +471,7 @@ def get_integrator(u, v, dmap, minlength, maxlength):
     return integrate
 
 
-def _integrate_rk12(x0, y0, dmap, f, maxlength):
+def _integrate_rk12(x0, y0, dmap, f, maxlength, magnitude):
     """2nd-order Runge-Kutta algorithm with adaptive step size.
 
     This method is also referred to as the improved Euler's method, or Heun's
@@ -518,10 +513,12 @@ def _integrate_rk12(x0, y0, dmap, f, maxlength):
     yi = y0
     xf_traj = []
     yf_traj = []
-
+    m_total = []
+    
     while dmap.grid.within_grid(xi, yi):
         xf_traj.append(xi)
         yf_traj.append(yi)
+        m_total.append(interpgrid(magnitude, xi, yi))
         try:
             k1x, k1y = f(xi, yi)
             k2x, k2y = f(xi + ds * k1x,
@@ -551,7 +548,7 @@ def _integrate_rk12(x0, y0, dmap, f, maxlength):
             
             dmap.update_trajectory(xi, yi)
             
-            if (stotal + ds) > maxlength:
+            if (stotal + ds) > maxlength*np.mean(m_total):
                 break
             stotal += ds
 
