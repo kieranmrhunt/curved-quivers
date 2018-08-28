@@ -22,7 +22,7 @@ import matplotlib.patches as patches
 def velovect(axes, x, y, u, v, density=1, linewidth=None, color=None,
                cmap=None, norm=None, arrowsize=1, arrowstyle='-|>',
                minlength=0.1, transform=None, zorder=None, start_points=None,
-               maxlength=4.0, integration_direction='both'):
+               maxlength=4.0, ):
     """Draws streamlines of a vector flow.
 
     *x*, *y* : 1d arrays
@@ -60,8 +60,6 @@ def velovect(axes, x, y, u, v, density=1, linewidth=None, color=None,
         any number
     *maxlength* : float
         Maximum length of streamline in axes coordinates.
-    *integration_direction* : ['forward', 'backward', 'both']
-        Integrate the streamline in forward, backward or both directions.
 
     Returns:
 
@@ -99,15 +97,6 @@ def velovect(axes, x, y, u, v, density=1, linewidth=None, color=None,
     line_kw = {}
     arrow_kw = dict(arrowstyle=arrowstyle, mutation_scale=10 * arrowsize)
 
-    if integration_direction not in ['both', 'forward', 'backward']:
-        errstr = ("Integration direction '%s' not recognised. "
-                  "Expected 'both', 'forward' or 'backward'." %
-                  integration_direction)
-        raise ValueError(errstr)
-
-    if integration_direction == 'both':
-        maxlength /= 2.
-
     use_multicolor_lines = isinstance(color, np.ndarray)
     if use_multicolor_lines:
         if color.shape != grid.shape:
@@ -140,8 +129,7 @@ def velovect(axes, x, y, u, v, density=1, linewidth=None, color=None,
     magnitude = np.sqrt(u**2 + v**2)
     magnitude/=np.max(magnitude)
 	
-    integrate = get_integrator(u, v, dmap, minlength, maxlength,
-                               integration_direction)
+    integrate = get_integrator(u, v, dmap, minlength, maxlength)
 
     trajectories = []
     if start_points is None:
@@ -222,8 +210,15 @@ def velovect(axes, x, y, u, v, density=1, linewidth=None, color=None,
 
         p = patches.FancyArrowPatch(
             arrow_tail, arrow_head, transform=transform, **arrow_kw)
+        
+        ds = np.sqrt((arrow_tail[0]-arrow_head[0])**2+(arrow_tail[1]-arrow_head[1])**2)
+        
+        if ds<1e-15: continue #remove vanishingly short arrows that cause Patch to fail
+        
         axes.add_patch(p)
         arrows.append(p)
+        
+        
 		
     lc = mcollections.LineCollection(
         streamlines, transform=transform, **line_kw)
@@ -426,7 +421,7 @@ class StreamMask(object):
 # Integrator definitions
 #========================
 
-def get_integrator(u, v, dmap, minlength, maxlength, integration_direction):
+def get_integrator(u, v, dmap, minlength, maxlength):
 
     # rescale velocity onto grid-coordinates for integrations.
     u, v = dmap.data2grid(u, v)
@@ -445,9 +440,6 @@ def get_integrator(u, v, dmap, minlength, maxlength, integration_direction):
         vi = interpgrid(v, xi, yi)
         return ui * dt_ds, vi * dt_ds
 
-    def backward_time(xi, yi):
-        dxi, dyi = forward_time(xi, yi)
-        return -dxi, -dyi
 
     def integrate(x0, y0):
         """Return x, y grid-coordinates of trajectory based on starting point.
@@ -465,21 +457,15 @@ def get_integrator(u, v, dmap, minlength, maxlength, integration_direction):
         
         dmap.start_trajectory(x0, y0)
         
-        if integration_direction in ['both', 'backward']:
-            s, xt, yt = _integrate_rk12(x0, y0, dmap, backward_time, maxlength)
-            stotal += s
-            x_traj += xt[::-1]
-            y_traj += yt[::-1]
-
-        if integration_direction in ['both', 'forward']:
-            dmap.reset_start_point(x0, y0)
-            s, xt, yt = _integrate_rk12(x0, y0, dmap, forward_time, maxlength)
-            if len(x_traj) > 0:
-                xt = xt[1:]
-                yt = yt[1:]
-            stotal += s
-            x_traj += xt
-            y_traj += yt
+ 
+        dmap.reset_start_point(x0, y0)
+        s, xt, yt = _integrate_rk12(x0, y0, dmap, forward_time, maxlength)
+        if len(x_traj) > 0:
+            xt = xt[1:]
+            yt = yt[1:]
+        stotal += s
+        x_traj += xt
+        y_traj += yt
 
         if stotal > minlength:
             return x_traj, y_traj

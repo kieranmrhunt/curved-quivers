@@ -25,7 +25,7 @@ ax1.quiver(X[::s,::s],Y[::s,::s],U[::s,::s],V[::s,::s])
 ax2.streamplot(X,Y,U,V, color='k')
 
 
-grains = 12
+grains = 15
 tmp =  np.linspace(-3, 3, grains)
 xs = np.tile(tmp, grains)
 ys = np.repeat(tmp, grains)
@@ -35,7 +35,7 @@ seed_points = np.array([list(xs), list(ys)])
 
 scale=2.
 
-velovect(ax3,X,Y,U,V, arrowstyle='fancy', integration_direction='forward', density=10,
+velovect(ax3,X,Y,U,V, arrowstyle='fancy', density=10,
                    minlength=.9*scale/grains, maxlength = scale/grains, start_points = seed_points.T,
 				   color='k')
 
