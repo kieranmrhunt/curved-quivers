@@ -38,7 +38,7 @@ seed_points = np.array([list(xs), list(ys)])
 scale=2.
 
 velovect(ax3,X,Y,U,V, arrowstyle='fancy', density=10,
-                   minlength=.9*scale/grains, maxlength = scale/grains, 
+                   minlength=.9*scale/grains, scale = scale/grains, 
                    start_points = seed_points.T,
 				   color='k')
 

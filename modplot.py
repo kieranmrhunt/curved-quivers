@@ -22,7 +22,7 @@ import matplotlib.patches as patches
 def velovect(axes, x, y, u, v, density=1, linewidth=None, color=None,
                cmap=None, norm=None, arrowsize=1, arrowstyle='-|>',
                minlength=0.1, transform=None, zorder=None, start_points=None,
-               maxlength=4.0, ):
+               scale=4.0, ):
     """Draws streamlines of a vector flow.
 
     *x*, *y* : 1d arrays
@@ -58,7 +58,7 @@ def velovect(axes, x, y, u, v, density=1, linewidth=None, color=None,
         In data coordinates, the same as the ``x`` and ``y`` arrays.
     *zorder* : int
         any number
-    *maxlength* : float
+    *scale* : float
         Maximum length of streamline in axes coordinates.
 
     Returns:
@@ -129,16 +129,19 @@ def velovect(axes, x, y, u, v, density=1, linewidth=None, color=None,
     magnitude = np.sqrt(u**2 + v**2)
     magnitude/=np.max(magnitude)
 	
-    integrate = get_integrator(u, v, dmap, minlength, maxlength, magnitude)
+    integrate = get_integrator(u, v, dmap, minlength, scale, magnitude)
 
     trajectories = []
+    edges = []
+    
     if start_points is None:
         for xm, ym in _gen_starting_points(mask.shape):
             if mask[ym, xm] == 0:
                 xg, yg = dmap.mask2grid(xm, ym)
                 t = integrate(xg, yg)
                 if t is not None:
-                    trajectories.append(t)
+                    trajectories.append(t[0])
+                    edges.append(t[1])
     else:
         sp2 = np.asanyarray(start_points, dtype=float).copy()
 
@@ -159,7 +162,8 @@ def velovect(axes, x, y, u, v, density=1, linewidth=None, color=None,
             xg, yg = dmap.data2grid(xs, ys)
             t = integrate(xg, yg)
             if t is not None:
-                trajectories.append(t)
+                trajectories.append(t[0])
+                edges.append(t[1])
 
     if use_multicolor_lines:
         if norm is None:
@@ -171,24 +175,17 @@ def velovect(axes, x, y, u, v, density=1, linewidth=None, color=None,
 
     streamlines = []
     arrows = []
-    for t in trajectories:
+    for t, edge in zip(trajectories,edges):
         tgx = np.array(t[0])
         tgy = np.array(t[1])
-		
-        #length = np.mean(interpgrid(magnitude, tgx, tgy))
-        #tgx = renormalize(tgx, length)
-        #tgy = renormalize(tgy, length)
+        
 		
         # Rescale from grid-coordinates to data-coordinates.
         tx, ty = dmap.grid2data(*np.array(t))
         tx += grid.x_origin
         ty += grid.y_origin
-		
-        #tx = renormalize(tx, length)
-        #ty = renormalize(ty, length)		
-        
-		
 
+        
         points = np.transpose([tx, ty]).reshape(-1, 1, 2)
         streamlines.extend(np.hstack([points[:-1], points[1:]]))
 
@@ -207,9 +204,12 @@ def velovect(axes, x, y, u, v, density=1, linewidth=None, color=None,
             color_values = interpgrid(color, tgx, tgy)[:-1]
             line_colors.append(color_values)
             arrow_kw['color'] = cmap(norm(color_values[n]))
-
-        p = patches.FancyArrowPatch(
-            arrow_tail, arrow_head, transform=transform, **arrow_kw)
+        
+        if not edge:
+            p = patches.FancyArrowPatch(
+                arrow_tail, arrow_head, transform=transform, **arrow_kw)
+        else:
+            continue
         
         ds = np.sqrt((arrow_tail[0]-arrow_head[0])**2+(arrow_tail[1]-arrow_head[1])**2)
         
@@ -235,14 +235,6 @@ def velovect(axes, x, y, u, v, density=1, linewidth=None, color=None,
     stream_container = StreamplotSet(lc, ac)
     return stream_container
 
-def renormalize(arr1d, norm):
-	x_old = np.linspace(0,1,len(arr1d))
-	x_new = np.linspace(0,1,100)
-	arr = interp1d(x_old,arr1d)(x_new)
-	clip = int(norm*100)
-	if clip<=1:
-		clip=2
-	return arr[:clip]
 	
 
 class StreamplotSet(object):
@@ -421,7 +413,7 @@ class StreamMask(object):
 # Integrator definitions
 #========================
 
-def get_integrator(u, v, dmap, minlength, maxlength, magnitude):
+def get_integrator(u, v, dmap, minlength, scale, magnitude):
 
     # rescale velocity onto grid-coordinates for integrations.
     u, v = dmap.data2grid(u, v)
@@ -458,12 +450,12 @@ def get_integrator(u, v, dmap, minlength, maxlength, magnitude):
         dmap.start_trajectory(x0, y0)
 
         dmap.reset_start_point(x0, y0)
-        stotal, x_traj, y_traj = _integrate_rk12(x0, y0, dmap, forward_time, maxlength, magnitude)
+        stotal, x_traj, y_traj, m_total, hit_edge = _integrate_rk12(x0, y0, dmap, forward_time, scale, magnitude)
 
         
-        #if stotal > minlength:
+        #if stotal > 0.99*scale*np.mean(m_total):
         if len(x_traj)>1:
-            return x_traj, y_traj
+            return (x_traj, y_traj), hit_edge
         else:  # reject short trajectories
             dmap.undo_trajectory()
             return None
@@ -471,7 +463,7 @@ def get_integrator(u, v, dmap, minlength, maxlength, magnitude):
     return integrate
 
 
-def _integrate_rk12(x0, y0, dmap, f, maxlength, magnitude):
+def _integrate_rk12(x0, y0, dmap, f, scale, magnitude):
     """2nd-order Runge-Kutta algorithm with adaptive step size.
 
     This method is also referred to as the improved Euler's method, or Heun's
@@ -514,6 +506,7 @@ def _integrate_rk12(x0, y0, dmap, f, maxlength, magnitude):
     xf_traj = []
     yf_traj = []
     m_total = []
+    hit_edge = False
     
     while dmap.grid.within_grid(xi, yi):
         xf_traj.append(xi)
@@ -528,6 +521,7 @@ def _integrate_rk12(x0, y0, dmap, f, maxlength, magnitude):
             # Take an Euler step to the boundary to improve neatness.
             ds, xf_traj, yf_traj = _euler_step(xf_traj, yf_traj, dmap, f)
             stotal += ds
+            hit_edge = True
             break
         except TerminateTrajectory:
             break
@@ -548,7 +542,10 @@ def _integrate_rk12(x0, y0, dmap, f, maxlength, magnitude):
             
             dmap.update_trajectory(xi, yi)
             
-            if (stotal + ds) > maxlength*np.mean(m_total):
+            if not dmap.grid.within_grid(xi, yi):
+                hit_edge=True
+            
+            if (stotal + ds) > scale*np.mean(m_total):
                 break
             stotal += ds
 
@@ -558,7 +555,7 @@ def _integrate_rk12(x0, y0, dmap, f, maxlength, magnitude):
         else:
             ds = min(maxds, 0.85 * ds * (maxerror / error) ** 0.5)
 
-    return stotal, xf_traj, yf_traj
+    return stotal, xf_traj, yf_traj, m_total, hit_edge
 
 
 def _euler_step(xf_traj, yf_traj, dmap, f):
