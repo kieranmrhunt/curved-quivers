@@ -11,11 +11,11 @@ Y, X = np.mgrid[-w:w:100j, -w:w:100j]
 #U = np.sin(X)*np.sin(Y)
 #V = np.cos(X)*np.sin(Y)
 
-#U = -Y
-#V = X
+U = -Y
+V = X
 
-U = -Y*np.sin(Y)*np.cos(Y)
-V = X*np.sin(X)*np.cos(X)
+#U = -Y*np.sin(Y)*np.cos(Y)
+#V = X*np.sin(X)*np.cos(X)
 
 
 W = np.sqrt(U**2 + V**2)

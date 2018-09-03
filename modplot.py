@@ -19,10 +19,10 @@ import matplotlib.patches as patches
 
 
 
-def velovect(axes, x, y, u, v, density=1, linewidth=None, color=None,
+def velovect(axes, x, y, u, v, linewidth=None, color=None,
                cmap=None, norm=None, arrowsize=1, arrowstyle='-|>',
-               minlength=0.1, transform=None, zorder=None, start_points=None,
-               scale=4.0, ):
+               transform=None, zorder=None, start_points=None,
+               scale=1.0, grains=15):
     """Draws streamlines of a vector flow.
 
     *x*, *y* : 1d arrays
@@ -78,7 +78,7 @@ def velovect(axes, x, y, u, v, density=1, linewidth=None, color=None,
 
     """
     grid = Grid(x, y)
-    mask = StreamMask(density)
+    mask = StreamMask(10)
     dmap = DomainMap(grid, mask)
 
     if zorder is None:
@@ -129,41 +129,37 @@ def velovect(axes, x, y, u, v, density=1, linewidth=None, color=None,
     magnitude = np.sqrt(u**2 + v**2)
     magnitude/=np.max(magnitude)
 	
-    integrate = get_integrator(u, v, dmap, minlength, scale, magnitude)
+    resolution = scale/grains
+    minlength = .9*resolution
+    integrate = get_integrator(u, v, dmap, minlength, resolution, magnitude)
 
     trajectories = []
     edges = []
     
     if start_points is None:
-        for xm, ym in _gen_starting_points(mask.shape):
-            if mask[ym, xm] == 0:
-                xg, yg = dmap.mask2grid(xm, ym)
-                t = integrate(xg, yg)
-                if t is not None:
-                    trajectories.append(t[0])
-                    edges.append(t[1])
-    else:
-        sp2 = np.asanyarray(start_points, dtype=float).copy()
+        start_points=_gen_starting_points(x,y,grains)
+    
+    sp2 = np.asanyarray(start_points, dtype=float).copy()
 
-        # Check if start_points are outside the data boundaries
-        for xs, ys in sp2:
-            if not (grid.x_origin <= xs <= grid.x_origin + grid.width
-                    and grid.y_origin <= ys <= grid.y_origin + grid.height):
-                raise ValueError("Starting point ({}, {}) outside of data "
-                                 "boundaries".format(xs, ys))
+    # Check if start_points are outside the data boundaries
+    for xs, ys in sp2:
+        if not (grid.x_origin <= xs <= grid.x_origin + grid.width
+                and grid.y_origin <= ys <= grid.y_origin + grid.height):
+            raise ValueError("Starting point ({}, {}) outside of data "
+                             "boundaries".format(xs, ys))
 
-        # Convert start_points from data to array coords
-        # Shift the seed points from the bottom left of the data so that
-        # data2grid works properly.
-        sp2[:, 0] -= grid.x_origin
-        sp2[:, 1] -= grid.y_origin
+    # Convert start_points from data to array coords
+    # Shift the seed points from the bottom left of the data so that
+    # data2grid works properly.
+    sp2[:, 0] -= grid.x_origin
+    sp2[:, 1] -= grid.y_origin
 
-        for xs, ys in sp2:
-            xg, yg = dmap.data2grid(xs, ys)
-            t = integrate(xg, yg)
-            if t is not None:
-                trajectories.append(t[0])
-                edges.append(t[1])
+    for xs, ys in sp2:
+        xg, yg = dmap.data2grid(xs, ys)
+        t = integrate(xg, yg)
+        if t is not None:
+            trajectories.append(t[0])
+            edges.append(t[1])
 
     if use_multicolor_lines:
         if norm is None:
@@ -413,7 +409,7 @@ class StreamMask(object):
 # Integrator definitions
 #========================
 
-def get_integrator(u, v, dmap, minlength, scale, magnitude):
+def get_integrator(u, v, dmap, minlength, resolution, magnitude):
 
     # rescale velocity onto grid-coordinates for integrations.
     u, v = dmap.data2grid(u, v)
@@ -450,10 +446,9 @@ def get_integrator(u, v, dmap, minlength, scale, magnitude):
         dmap.start_trajectory(x0, y0)
 
         dmap.reset_start_point(x0, y0)
-        stotal, x_traj, y_traj, m_total, hit_edge = _integrate_rk12(x0, y0, dmap, forward_time, scale, magnitude)
+        stotal, x_traj, y_traj, m_total, hit_edge = _integrate_rk12(x0, y0, dmap, forward_time, resolution, magnitude)
 
         
-        #if stotal > 0.99*scale*np.mean(m_total):
         if len(x_traj)>1:
             return (x_traj, y_traj), hit_edge
         else:  # reject short trajectories
@@ -463,7 +458,7 @@ def get_integrator(u, v, dmap, minlength, scale, magnitude):
     return integrate
 
 
-def _integrate_rk12(x0, y0, dmap, f, scale, magnitude):
+def _integrate_rk12(x0, y0, dmap, f, resolution, magnitude):
     """2nd-order Runge-Kutta algorithm with adaptive step size.
 
     This method is also referred to as the improved Euler's method, or Heun's
@@ -545,7 +540,7 @@ def _integrate_rk12(x0, y0, dmap, f, scale, magnitude):
             if not dmap.grid.within_grid(xi, yi):
                 hit_edge=True
             
-            if (stotal + ds) > scale*np.mean(m_total):
+            if (stotal + ds) > resolution*np.mean(m_total):
                 break
             stotal += ds
 
@@ -625,42 +620,16 @@ def interpgrid(a, xi, yi):
     return ai
 
 
-def _gen_starting_points(shape):
-    """Yield starting points for streamlines.
+def _gen_starting_points(x,y,grains):
+    
+    eps = np.finfo(np.float32).eps
+    
+    tmp_x =  np.linspace(x.min()+eps, x.max()-eps, grains)
+    tmp_y =  np.linspace(y.min()+eps, y.max()-eps, grains)
+    
+    xs = np.tile(tmp_x, grains)
+    ys = np.repeat(tmp_y, grains)
 
-    Trying points on the boundary first gives higher quality streamlines.
-    This algorithm starts with a point on the mask corner and spirals inward.
-    This algorithm is inefficient, but fast compared to rest of streamplot.
-    """
-    ny, nx = shape
-    xfirst = 0
-    yfirst = 1
-    xlast = nx - 1
-    ylast = ny - 1
-    x, y = 0, 0
-    i = 0
-    direction = 'right'
-    for i in xrange(nx * ny):
-
-        yield x, y
-
-        if direction == 'right':
-            x += 1
-            if x >= xlast:
-                xlast -= 1
-                direction = 'up'
-        elif direction == 'up':
-            y += 1
-            if y >= ylast:
-                ylast -= 1
-                direction = 'left'
-        elif direction == 'left':
-            x -= 1
-            if x <= xfirst:
-                xfirst += 1
-                direction = 'down'
-        elif direction == 'down':
-            y -= 1
-            if y <= yfirst:
-                yfirst += 1
-                direction = 'right'
+    seed_points = np.array([list(xs), list(ys)])
+    
+    return seed_points.T
